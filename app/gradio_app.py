@@ -33,7 +33,8 @@ def load_model(cfg: dict):
     )
     model = AutoModelForCausalLM.from_pretrained(
         mcfg["base_model"],
-        dtype=None if quant else torch.bfloat16,
+        # 4bit 时同样用 bf16:非量化模块(embed/lm_head/norm)若为 fp32 会多吃数 GB 显存
+        dtype=torch.bfloat16,
         quantization_config=quant,
         device_map="auto",
         trust_remote_code=mcfg.get("trust_remote_code", False),
@@ -67,10 +68,10 @@ def main() -> int:
         messages += history
         messages.append({"role": "user", "content": message})
         inputs = tokenizer.apply_chat_template(
-            messages, return_tensors="pt", add_generation_prompt=True
+            messages, return_tensors="pt", return_dict=True, add_generation_prompt=True
         ).to(model.device)
         out = model.generate(
-            inputs,
+            **inputs,
             max_new_tokens=gcfg["max_new_tokens"],
             temperature=gcfg["temperature"],
             top_p=gcfg["top_p"],
@@ -78,7 +79,7 @@ def main() -> int:
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id,
         )
-        return tokenizer.decode(out[0][inputs.shape[1]:], skip_special_tokens=True).strip()
+        return tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True).strip()
 
     demo = gr.ChatInterface(
         fn=chat,

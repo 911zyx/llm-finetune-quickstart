@@ -67,6 +67,12 @@ def main() -> int:
         task_type="CAUSAL_LM",
     )
 
+    # TRL 1.x 的 SFTConfig 只支持 warmup_steps;按估算的总步数从 warmup_ratio 换算
+    import math as _math
+    eff_batch = tcfg["per_device_train_batch_size"] * tcfg["gradient_accumulation_steps"]
+    est_steps = _math.ceil(len(dataset["train"]) / eff_batch) * tcfg["num_train_epochs"]
+    warmup_steps = max(1, int(est_steps * tcfg.get("warmup_ratio", 0.03)))
+
     training_args = SFTConfig(
         output_dir=str(ROOT / tcfg["output_dir"]),
         num_train_epochs=tcfg["num_train_epochs"],
@@ -74,7 +80,7 @@ def main() -> int:
         gradient_accumulation_steps=tcfg["gradient_accumulation_steps"],
         learning_rate=tcfg["learning_rate"],
         lr_scheduler_type=tcfg["lr_scheduler_type"],
-        warmup_ratio=tcfg["warmup_ratio"],
+        warmup_steps=warmup_steps,
         logging_steps=tcfg["logging_steps"],
         save_strategy=tcfg["save_strategy"],
         bf16=tcfg.get("bf16", False),

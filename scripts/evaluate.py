@@ -49,7 +49,8 @@ def load_pair(cfg: dict, with_adapter: bool):
     )
     model = AutoModelForCausalLM.from_pretrained(
         mcfg["base_model"],
-        dtype=None if quant else torch.bfloat16,
+        # 4bit 时同样用 bf16:非量化模块(embed/lm_head/norm)若为 fp32 会多吃数 GB 显存
+        dtype=torch.bfloat16,
         quantization_config=quant,
         device_map="auto",
         trust_remote_code=mcfg.get("trust_remote_code", False),
@@ -77,8 +78,11 @@ def perplexity(cfg: dict, with_adapter: bool) -> float:
             losses += out.loss.item() * n
             tokens += n
     ppl = math.exp(losses / max(tokens, 1))
-    del model
-    torch.cuda.empty_cache()  # 释放后再加载下一模型,避免显存叠加
+    del model, tokenizer
+    import gc
+    gc.collect()              # 先触发 GC 释放循环引用,再清空显存缓存
+    torch.cuda.empty_cache()
+    torch.cuda.synchronize()
     return ppl
 
 
@@ -94,10 +98,10 @@ def _generate_all(cfg: dict, with_adapter: bool, name: str) -> list[str]:
             {"role": "user", "content": prompt},
         ]
         inputs = tokenizer.apply_chat_template(
-            messages, return_tensors="pt", add_generation_prompt=True
+            messages, return_tensors="pt", return_dict=True, add_generation_prompt=True
         ).to(model.device)
         out = model.generate(
-            inputs,
+            **inputs,
             max_new_tokens=gcfg["max_new_tokens"],
             temperature=gcfg["temperature"],
             top_p=gcfg["top_p"],
@@ -105,9 +109,12 @@ def _generate_all(cfg: dict, with_adapter: bool, name: str) -> list[str]:
             do_sample=True,
             pad_token_id=tokenizer.eos_token_id,
         )
-        replies.append(tokenizer.decode(out[0][inputs.shape[1]:], skip_special_tokens=True).strip())
-    del model
+        replies.append(tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True).strip())
+    del model, tokenizer
+    import gc
+    gc.collect()              # 先触发 GC 释放循环引用,再清空显存缓存
     torch.cuda.empty_cache()
+    torch.cuda.synchronize()
     return replies
 
 
