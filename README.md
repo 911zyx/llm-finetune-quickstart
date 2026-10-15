@@ -12,6 +12,8 @@
 
 ![编程能力:代码报错诊断](docs/screenshots/03_coding.png)
 
+![v5 人设问答:稳定的小K 自我介绍](docs/screenshots/04_persona.png)
+
 ## ✨ 项目亮点
 
 - **全流程可复现**:每个环节一个脚本,配置集中在 `configs/sft_lora.yaml`
