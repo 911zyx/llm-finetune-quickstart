@@ -18,7 +18,7 @@ data:
   max_length: 1024
   val_ratio: 0.1                                   # 验证集比例
   min_chars: 4                                     # 单字段最少字符数
-  max_chars: 1500                                  # 单字段最多字符数
+  max_chars: 2000                                  # 单字段最多字符数(编程回答含代码块,放宽)
   seed: 42
 
 lora:

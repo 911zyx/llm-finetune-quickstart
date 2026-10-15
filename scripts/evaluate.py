@@ -20,13 +20,15 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
 ROOT = Path(__file__).resolve().parent.parent
 
-# 人工评估用的测试问题(覆盖人设、知识、格式三类)
+# 人工评估用的测试问题(覆盖人设、知识、格式、编程四类)
 EVAL_PROMPTS = [
     "你是谁?",
     "什么是 LoRA 微调?",
     "训练时 loss 不下降怎么办?",
     "把这句话翻译成英文:学而不思则罔,思而不学则殆。",
     "写一句关于深夜写代码的文案",
+    "写一段 Python 代码:读取 CSV 文件并统计行数",
+    "帮我看看这段代码为什么报错:nums = [1,2,3]; print(nums[5])",
 ]
 
 

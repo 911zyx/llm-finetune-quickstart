@@ -44,6 +44,37 @@ FEWSHOT = """示例1:
 {"instruction": "把这句话翻译成英文", "input": "实践是检验真理的唯一标准。", "output": "Practice is the sole criterion for testing truth."}
 """
 
+# ============ 编程能力预设 ============
+CODING_TOPICS = [
+    "Python 列表与字典操作", "Python 字符串处理", "写排序算法代码", "写二分查找代码",
+    "调试 IndexError 报错", "调试 KeyError 报错", "调试类型错误 TypeError", "解释装饰器",
+    "解释生成器与迭代器", "类与面向对象编程", "异常处理 try-except 写法", "文件读写代码",
+    "正则表达式写法", "列表推导式技巧", "函数式编程 map/filter", "类型注解写法",
+    "SQL 查询语句", "SQL 多表 JOIN", "pandas 数据清洗代码", "pandas 分组聚合",
+    "numpy 数组运算", "Git 合并冲突解决", "Git 回滚与撤销操作", "Linux 常用命令",
+    "写 Flask/FastAPI 接口", "requests 发 HTTP 请求", "爬虫基础代码", "单元测试写法",
+    "代码性能优化建议", "LeetCode 解题思路", "动态规划入门题", "递归改写为循环",
+    "代码审查与重构建议", "解释一段报错堆栈", "并发与多线程基础", "虚拟环境与 pip 依赖",
+]
+
+CODING_FEWSHOT = """示例1:
+{"instruction": "写一段计算斐波那契数列的 Python 代码", "input": "", "output": "结论:推荐迭代写法,时间 O(n)、空间 O(1)。\\n\\n```python\\ndef fib(n: int) -> int:\\n    a, b = 0, 1\\n    for _ in range(n):\\n        a, b = b, a + b\\n    return a\\n```\\n\\n注意:递归写法有指数级重复计算,n 大时应避免。"}
+
+示例2:
+{"instruction": "帮我看看这段代码为什么报错", "input": "nums = [1, 2, 3]\\nprint(nums[3])", "output": "结论:索引越界,列表只有 3 个元素,最大下标是 2。\\n\\n1. 原因:Python 下标从 0 开始,nums[3] 超出了范围。\\n2. 修复:改为 nums[2],或用 nums[-1] 取最后一个元素。\\n3. 建议:访问前用 len(nums) 判断长度更稳妥。"}
+"""
+
+CODING_PROMPT = """{fewshot}
+要求:
+1. 围绕主题「{topic}」编写一条全新的编程类训练数据,不要复制示例。
+2. 输出必须是单行 JSON,字段为 instruction(用户问题)、input(可选代码/报错上下文,无则为空字符串)、output(小K的回答)。
+3. 小K的回答风格:先给结论,再分点解释;代码必须放在 ```python 代码块中,代码用英文写、注释用中文。
+4. JSON 字符串内的换行必须写成 \\n。
+5. 只输出 JSON,不要任何其他文字。
+
+主题:{topic}
+这是第 {idx} 次生成,请与常见内容错开角度,保证多样性:"""
+
 PROMPT = """{fewshot}
 要求:
 1. 围绕主题「{topic}」编写一条全新的训练数据,不要复制示例。
@@ -77,13 +108,22 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/sft_lora.yaml")
     ap.add_argument("--n", type=int, default=400, help="目标生成条数")
+    ap.add_argument("--preset", choices=["general", "coding"], default="general",
+                    help="general=通用主题,coding=编程能力主题(带代码块)")
     args = ap.parse_args()
+
+    if args.preset == "coding":
+        topics_pool, fewshot, prompt_tpl = CODING_TOPICS, CODING_FEWSHOT, CODING_PROMPT
+        out_name, max_new = "generated_coding.jsonl", 600
+    else:
+        topics_pool, fewshot, prompt_tpl = TOPICS, FEWSHOT, PROMPT
+        out_name, max_new = "generated_instructions.jsonl", 350
 
     with open(ROOT / args.config, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     mcfg = cfg["model"]
 
-    out_path = ROOT / "data/raw/generated_instructions.jsonl"
+    out_path = ROOT / "data/raw" / out_name
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     # 断点续跑:统计已有条数与已有指令(用于去重)
@@ -113,7 +153,7 @@ def main() -> int:
     model.eval()
 
     rng = random.Random(42)
-    topics = TOPICS * (args.n // len(TOPICS) + 2)
+    topics = topics_pool * (args.n // len(topics_pool) + 2)
     rng.shuffle(topics)
 
     written, fails = have, 0
@@ -123,22 +163,23 @@ def main() -> int:
                 break
             messages = [
                 {"role": "system", "content": SYS},
-                {"role": "user", "content": PROMPT.format(fewshot=FEWSHOT, topic=topic, idx=i)},
+                {"role": "user", "content": prompt_tpl.format(fewshot=fewshot, topic=topic, idx=i)},
             ]
             inputs = tokenizer.apply_chat_template(
                 messages, return_tensors="pt", return_dict=True, add_generation_prompt=True
             ).to(model.device)
             out = model.generate(
-                **inputs, max_new_tokens=350, temperature=0.9, top_p=0.95,
+                **inputs, max_new_tokens=max_new, temperature=0.9, top_p=0.95,
                 do_sample=True, pad_token_id=tokenizer.eos_token_id,
             )
             text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
             sample = extract_json(text)
 
-            # 基础过滤:长度、去重
+            # 基础过滤:长度、去重(编程回答含代码块,上限放宽到 2000)
+            max_out = 2000 if args.preset == "coding" else 1200
             if (not sample or sample["instruction"] in existing
                     or not 8 <= len(sample["instruction"]) <= 200
-                    or not 30 <= len(sample["output"]) <= 1200):
+                    or not 30 <= len(sample["output"]) <= max_out):
                 fails += 1
                 continue
             existing.add(sample["instruction"])
