@@ -31,7 +31,8 @@ llm-finetune-quickstart/
 │   └── processed/                      # 清洗产物(train.jsonl / val.jsonl)
 ├── scripts/
 │   ├── clean_data.py              # ① 数据清洗
-│   ├── generate_data.py           # ①.5 self-instruct 数据合成(可选)
+│   ├── generate_data.py           # ①.5 self-instruct 数据合成(通用/编程预设)
+│   ├── fetch_public_dataset.py    # ①.6 公开指令集抓取与格式转换(流式采样)
 │   ├── download_model_fast.py     # 多线程分块模型下载器(断点续传)
 │   ├── train_sft.py               # ② LoRA/QLoRA 训练(TRL SFTTrainer)
 │   ├── evaluate.py                # ③ 评估:困惑度 + 生成对比
@@ -101,7 +102,14 @@ python app/api_server.py      # API 服务 http://127.0.0.1:8000/docs
 
 - **环境**:PyTorch 2.9.1+cu128(Blackwell 必需)+ triton-windows 3.8(TRL 融合 loss 依赖)+ TRL 1.15
 
-**v3(44 人工 + 353 通用合成 + 350 编程合成,共 737 条;当前版本)**
+**v4(v3 数据 + school_math 600 + firefly 600 公开数据集,共 1921 条;当前版本)**
+
+- **公开数据集**:`scripts/fetch_public_dataset.py` 流式采样 BelleGroup/school_math(数学推理)与 YeungNLP/firefly(23 类中文任务),字段自动映射为本项目格式
+- **训练**:1729 条训练样本 / 3 epochs / 327 步,45 分钟,train_loss 1.04(数据更多样,loss 高于 v3 属正常)
+- **困惑度**:验证集 基座 13.72 → 微调后 **3.26**(验证集含公开数据,口径与 v3 不同)
+- **观察到的取舍**:知识/任务覆盖面扩大,但人设出现轻微稀释(自我介绍混入基座身份描述)——公开数据占比过高时会冲淡自定义风格,可通过提高人设数据占比(upsampling)缓解
+
+**v3(44 人工 + 353 通用合成 + 350 编程合成,共 737 条)**
 
 - **编程数据**:`generate_data.py --preset coding` 生成 350 条编程数据(35 个编程主题),90% 含可运行代码块,生成失败率仅 5.7%
 - **训练**:664 条训练样本 / 3 epochs / 126 步,14.7 分钟,train_loss **0.60**,token 准确率 86%
