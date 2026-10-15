@@ -1,0 +1,55 @@
+# ============ LoRA SFT 训练配置 ============
+# 默认按 RTX 5080(16GB)调优;低显存机器见 configs/README 说明或改用 QLoRA
+# 所有路径相对于仓库根目录
+
+model:
+  # 基座模型:14B + QLoRA(4bit),RTX 5080 16GB 可训的最大档位
+  base_model: "Qwen/Qwen2.5-14B-Instruct"
+  # 其他档位:
+  #   bitsandbytes 装不上/想更稳 -> "Qwen/Qwen2.5-7B-Instruct" + lora.use_qlora: false
+  #   8GB 显存                   -> "Qwen/Qwen2.5-3B-Instruct"
+  #   4GB/Colab                  -> "Qwen/Qwen2.5-0.5B-Instruct"
+  trust_remote_code: true
+
+data:
+  raw_path: "data/raw/sample_instructions.jsonl"   # 原始数据(自带示例,可换成自己的)
+  processed_dir: "data/processed"                  # 清洗后输出目录
+  max_length: 1024
+  val_ratio: 0.1                                   # 验证集比例
+  min_chars: 4                                     # 单字段最少字符数
+  max_chars: 1500                                  # 单字段最多字符数
+  seed: 42
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  bias: "none"
+  use_qlora: true         # 14B 必须开 4bit 量化训练;Windows 下装不上 bitsandbytes 就换 7B + false
+
+train:
+  output_dir: "outputs/sft-lora"
+  num_train_epochs: 3
+  per_device_train_batch_size: 1     # 14B + 4bit + 16GB 显存的安全值
+  gradient_accumulation_steps: 16    # 等效 batch = 16
+  learning_rate: 2.0e-4
+  lr_scheduler_type: "cosine"
+  warmup_ratio: 0.03
+  logging_steps: 5
+  save_strategy: "epoch"
+  bf16: true                          # RTX 50 系原生支持 bf16,优先于 fp16
+  gradient_checkpointing: true
+  max_grad_norm: 1.0
+  report_to: "none"                   # 可改为 "wandb" 接入实验跟踪
+
+generate:
+  max_new_tokens: 256
+  temperature: 0.7
+  top_p: 0.9
+  repetition_penalty: 1.05
+
+deploy:
+  merged_dir: "merged_model"
+  adapter_dir: "outputs/sft-lora"     # 训练产物中的 LoRA adapter
+  system_prompt: "你是小K,一位耐心、严谨的中文学习助手。回答先给结论,再分点解释,必要时举例。"

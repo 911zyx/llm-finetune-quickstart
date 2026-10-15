@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 数据产物(原始数据保留,处理结果不入库)
+data/processed/
+!data/processed/.gitkeep
+
+# 模型与训练产物
+outputs/
+checkpoints/
+merged_model/
+*.bin
+*.safetensors
+
+# 日志与缓存
+*.log
+wandb/
+.ruff_cache/
+.ipynb_checkpoints/
+.gradio/
+
+# 系统
+.DS_Store
+Thumbs.db
