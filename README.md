@@ -10,6 +10,8 @@
 
 ![微调后对话效果:结论先行 + 分点解释](docs/screenshots/02_chat.png)
 
+![编程能力:代码报错诊断](docs/screenshots/03_coding.png)
+
 ## ✨ 项目亮点
 
 - **全流程可复现**:每个环节一个脚本,配置集中在 `configs/sft_lora.yaml`
