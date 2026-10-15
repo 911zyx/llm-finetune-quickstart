@@ -13,7 +13,10 @@ model:
   trust_remote_code: true
 
 data:
-  raw_path: "data/raw/all_instructions.jsonl"      # 原始数据(sample + self-instruct 合成)
+  raw_path: "data/raw/all_instructions.jsonl"      # 原始数据(合成 + 公开数据集)
+  # 人设种子数据上采样:清洗去重后按倍数追加,防止被大数据稀释人设
+  upsample_paths:
+    "data/raw/sample_instructions.jsonl": 5
   processed_dir: "data/processed"                  # 清洗后输出目录
   max_length: 1024
   val_ratio: 0.1                                   # 验证集比例

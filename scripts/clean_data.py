@@ -137,6 +137,19 @@ def main() -> int:
 
     kept, stats = clean(raw_path, cfg)
 
+    # 上采样通道:指定文件清洗去重后按倍数追加(用于人设种子等关键小数据,
+    # 防止在大数据混合时被稀释;追加的副本不参与全局去重)
+    upsampled = 0
+    for path_str, factor in (cfg.get("upsample_paths") or {}).items():
+        up_path = ROOT / path_str
+        if not up_path.exists():
+            print(f"[WARN] 上采样文件不存在,跳过: {up_path}", file=sys.stderr)
+            continue
+        rows, _ = clean(up_path, cfg)
+        kept.extend(rows * int(factor))
+        upsampled += len(rows) * int(factor)
+        print(f"[upsample] {path_str} × {factor} = {len(rows) * int(factor)} 条")
+
     rng = random.Random(cfg["seed"])
     rng.shuffle(kept)
     n_val = max(1, int(len(kept) * cfg["val_ratio"]))
@@ -154,7 +167,8 @@ def main() -> int:
     print(f"长度异常丢弃:  {stats['too_short_long']}")
     print(f"含隐私信息丢弃: {stats['pii']}")
     print(f"重复丢弃:      {stats['duplicate']}")
-    print(f"最终保留:      {stats['kept']}  (train={len(train)}, val={len(val)})")
+    print(f"上采样追加:    {upsampled}")
+    print(f"最终保留:      {len(kept)}  (train={len(train)}, val={len(val)})")
     print(f"输出目录:      {out_dir}")
     print("=" * 40)
     return 0
