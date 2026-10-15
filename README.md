@@ -4,6 +4,12 @@
 **数据清洗 → 指令微调 → 效果评估 → 权重合并 → Web/API 部署** 的完整闭环。
 单张 RTX 5080(16GB)即可复现,也可以一键降级到 Colab 免费 GPU。
 
+## 🖥 演示效果
+
+![Gradio 首页](docs/screenshots/01_home.png)
+
+![微调后对话效果:结论先行 + 分点解释](docs/screenshots/02_chat.png)
+
 ## ✨ 项目亮点
 
 - **全流程可复现**:每个环节一个脚本,配置集中在 `configs/sft_lora.yaml`
