@@ -18,10 +18,13 @@
 llm-finetune-quickstart/
 ├── configs/sft_lora.yaml          # 唯一配置文件(模型/数据/LoRA/训练/部署)
 ├── data/
-│   ├── raw/sample_instructions.jsonl   # 原始示例数据(含故意混入的脏数据)
+│   ├── raw/sample_instructions.jsonl   # 人工示例数据(含故意混入的脏数据)
+│   ├── raw/generated_instructions.jsonl # self-instruct 合成数据(353 条)
 │   └── processed/                      # 清洗产物(train.jsonl / val.jsonl)
 ├── scripts/
 │   ├── clean_data.py              # ① 数据清洗
+│   ├── generate_data.py           # ①.5 self-instruct 数据合成(可选)
+│   ├── download_model_fast.py     # 多线程分块模型下载器(断点续传)
 │   ├── train_sft.py               # ② LoRA/QLoRA 训练(TRL SFTTrainer)
 │   ├── evaluate.py                # ③ 评估:困惑度 + 生成对比
 │   └── merge_lora.py              # ④ 合并 adapter 为完整模型(可选)
@@ -89,13 +92,18 @@ python app/api_server.py      # API 服务 http://127.0.0.1:8000/docs
 本仓库代码已在以下环境完整跑通:
 
 - **环境**:PyTorch 2.9.1+cu128(Blackwell 必需)+ triton-windows 3.8(TRL 融合 loss 依赖)+ TRL 1.15
-- **训练**:37 条样本 / 3 epochs / 9 步,55 秒完成,train_loss 2.29,adapter 仅 143MB
-- **困惑度**:验证集 基座 52.62 → 微调后 **5.37**
-- **风格对比**(问题:把这句话翻译成英文:学而不思则罔,思而不学则殆。)
-  - 基座:翻译 + 逐句分点详细解释(264 字)
-  - 微调后:直译 + 一句话点出《论语》出处(51 字,贴合训练数据的简洁风格)
 
-> 示例数据仅 40+ 条,目标是跑通流程;换用更大数据集后质量会显著提升。
+**v2(44 条人工 + 353 条 self-instruct 合成,共 393 条)**
+
+- **数据合成**:`scripts/generate_data.py` 用基座模型按人设风格自生成,约 25 分钟产出 353 条,清洗管线自动剔除 3 条含示例手机号的脏数据
+- **训练**:354 条训练样本 / 3 epochs / 69 步,7.6 分钟,train_loss 0.83,token 准确率 83%
+- **困惑度**:验证集 基座 14.81 → 微调后 **2.21**
+- **风格**:微调后稳定输出「结论先行 + 分点解释」人设,自我介绍等开放问题也保持格式
+
+**v1(仅 44 条人工数据)**
+
+- 训练 9 步 55 秒,train_loss 2.29;验证集困惑度 基座 52.62 → 微调后 5.37
+- 结论:小数据能学会「风格」,扩充数据后拟合度与稳定性明显提升
 
 ## 💻 硬件档位
 
