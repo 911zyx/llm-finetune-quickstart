@@ -60,10 +60,13 @@ def build_app(cfg: dict) -> FastAPI:
         device_map="auto",
         trust_remote_code=mcfg.get("trust_remote_code", False),
     )
-    adapter = ROOT / tcfg["output_dir"] / "final"
+    # 优先使用 DPO 产物(SFT+DPO 合一的单 adapter),否则回退到纯 SFT adapter
+    dpo_dir = ROOT / "outputs/dpo-lora/final"
+    sft_dir = ROOT / tcfg["output_dir"] / "final"
+    adapter = dpo_dir if dpo_dir.exists() else sft_dir
     if adapter.exists():
         model = PeftModel.from_pretrained(model, str(adapter))
-        print(f"[INFO] 已加载 LoRA adapter: {adapter}")
+        print(f"[INFO] 已加载 adapter: {adapter}")
     model.eval()
 
     app = FastAPI(title="小K API", version="0.1.0")

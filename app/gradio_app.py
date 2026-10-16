@@ -39,10 +39,13 @@ def load_model(cfg: dict):
         device_map="auto",
         trust_remote_code=mcfg.get("trust_remote_code", False),
     )
-    adapter = ROOT / tcfg["output_dir"] / "final"
+    # 优先使用 DPO 产物(SFT+DPO 合一的单 adapter),否则回退到纯 SFT adapter
+    dpo_dir = ROOT / "outputs/dpo-lora/final"
+    sft_dir = ROOT / tcfg["output_dir"] / "final"
+    adapter = dpo_dir if dpo_dir.exists() else sft_dir
     if adapter.exists():
         model = PeftModel.from_pretrained(model, str(adapter))
-        print(f"[INFO] 已加载 LoRA adapter: {adapter}")
+        print(f"[INFO] 已加载 adapter: {adapter}")
     else:
         print(f"[WARN] 未找到 adapter({adapter}),以基座模型模式运行")
     model.eval()

@@ -37,7 +37,9 @@ llm-finetune-quickstart/
 │   ├── fetch_public_dataset.py    # ①.6 公开指令集抓取与格式转换(流式采样)
 │   ├── download_model_fast.py     # 多线程分块模型下载器(断点续传)
 │   ├── train_sft.py               # ② LoRA/QLoRA 训练(TRL SFTTrainer)
-│   ├── evaluate.py                # ③ 评估:困惑度 + 生成对比
+│   ├── generate_dpo_data.py       # ②.5 偏好对构造(复用拒绝采样打分器)
+│   ├── train_dpo.py               # ②.6 DPO 偏好对齐(TRL DPOTrainer)
+│   ├── evaluate.py                # ③ 评估:困惑度 + 生成对比(自动优先 DPO 产物)
 │   └── merge_lora.py              # ④ 合并 adapter 为完整模型(可选)
 ├── app/
 │   ├── gradio_app.py              # ⑤a Gradio 聊天演示
@@ -84,6 +86,15 @@ python scripts/train_sft.py --config configs/sft_lora.yaml
 
 14B + QLoRA + RTX 5080 约 1~2 小时(示例数据量小);adapter 保存在 `outputs/sft-lora/final/`。
 
+### 2.5 DPO 偏好对齐(可选)
+
+```bash
+python scripts/generate_dpo_data.py --n 100 --candidates 3   # 构造 chosen/rejected 偏好对
+python scripts/train_dpo.py --config configs/sft_lora.yaml   # 在 SFT adapter 基础上做 DPO
+```
+
+产物 `outputs/dpo-lora/final/` 是 SFT+DPO 合一的单 adapter,评估与部署时替代 SFT adapter 即可。
+
 ### 3. 评估
 
 ```bash
@@ -104,7 +115,15 @@ python app/api_server.py      # API 服务 http://127.0.0.1:8000/docs
 
 - **环境**:PyTorch 2.9.1+cu128(Blackwell 必需)+ triton-windows 3.8(TRL 融合 loss 依赖)+ TRL 1.15
 
-**v6(编程数据升级为拒绝采样版,共 2083 条;当前版本)**
+**v7(v6 之上叠加 DPO 偏好对齐;当前版本)**
+
+- **偏好对构造(零成本复用)**:`generate_dpo_data.py` 抽取训练集指令,用 v6 模型每题生成 3 个候选,复用拒绝采样的同一打分器,最优作 chosen、最差作 rejected,分差 ≥2 才保留,共 52 对
+- **训练**:`train_dpo.py`,TRL 1.15 DPOTrainer,beta=0.1、lr 5e-5、1 epoch、7 步、47 秒;参考模型由 TRL 自动将 SFT adapter 复制为冻结的 `ref` adapter 获得(参考 = 基座 + SFT,语义严格,不额外占显存)
+- **指标**:train_loss 0.586(低于随机基线 ln2≈0.693),rewards/accuracies 0.75–0.875,rewards/margins 0.20 → 0.53 持续放大
+- **产物**:`outputs/dpo-lora/final` 为「SFT+DPO 合一」单 adapter(DPO 直接在 SFT adapter 权重上更新;v6 SFT adapter 已备份至 `outputs/sft-lora-v6-final`),部署时替代 SFT adapter 单挂即可,`evaluate.py` 已自动优先使用
+- **效果**:生成评估显示人设风格(结论先行、分点、贴合种子文案)保持完整,编程回答结构稳定
+
+**v6(编程数据升级为拒绝采样版,共 2083 条)**
 
 - **拒绝采样**:`generate_data.py --candidates 4`,同一主题生成 4 个候选,规则打分(结论先行/分点结构/代码块闭合/长度甜区/无截断,满分 8)取最优
 - **数据质量 A/B**(同一打分标尺,n 均为 350):均分 6.79 → **7.48**,满分率 26% → **61%**,代码块完整率 87% → **97%**,生成失败率 5.7% → 0.6%
@@ -140,7 +159,8 @@ python app/api_server.py      # API 服务 http://127.0.0.1:8000/docs
 - 训练 9 步 55 秒,train_loss 2.29;验证集困惑度 基座 52.62 → 微调后 5.37
 
 > 结论:小数据学「风格」;扩充数据提升拟合与覆盖;混入公开数据需关注人设配比(v4 教训),
-> 关键小数据上采样即可修复(v5 验证)。v1→v5 构成完整的实验迭代记录。
+> 关键小数据上采样即可修复(v5 验证);拒绝采样提升数据质量(v6),其淘汰候选还能零成本构造
+> DPO 偏好对做对齐(v7)。v1→v7 构成完整的实验迭代记录。
 
 ## 💻 硬件档位
 

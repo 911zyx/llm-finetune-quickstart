@@ -58,7 +58,14 @@ def load_pair(cfg: dict, with_adapter: bool):
         trust_remote_code=mcfg.get("trust_remote_code", False),
     )
     if with_adapter:
-        model = PeftModel.from_pretrained(model, str(ROOT / tcfg["output_dir"] / "final"))
+        # 优先使用 DPO 产物(SFT+DPO 合一的单 adapter),否则回退到纯 SFT adapter
+        dpo_dir = ROOT / "outputs/dpo-lora/final"
+        sft_dir = ROOT / tcfg["output_dir"] / "final"
+        if dpo_dir.exists():
+            model = PeftModel.from_pretrained(model, str(dpo_dir))
+            print("[INFO] 使用 DPO adapter(SFT+DPO 合一)")
+        else:
+            model = PeftModel.from_pretrained(model, str(sft_dir))
     model.eval()
     return tokenizer, model
 
