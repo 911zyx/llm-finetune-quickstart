@@ -40,6 +40,7 @@ llm-finetune-quickstart/
 │   ├── generate_dpo_data.py       # ②.5 偏好对构造(复用拒绝采样打分器)
 │   ├── train_dpo.py               # ②.6 DPO 偏好对齐(TRL DPOTrainer)
 │   ├── evaluate.py                # ③ 评估:困惑度 + 生成对比(自动优先 DPO 产物)
+│   ├── judge_eval.py              # ③.5 LLM-as-judge 自动打分(四维度对比报告)
 │   └── merge_lora.py              # ④ 合并 adapter 为完整模型(可选)
 ├── app/
 │   ├── gradio_app.py              # ⑤a Gradio 聊天演示
@@ -100,6 +101,7 @@ python scripts/train_dpo.py --config configs/sft_lora.yaml   # 在 SFT adapter �
 ```bash
 python scripts/evaluate.py --mode ppl        # 困惑度:基座 vs 微调后
 python scripts/evaluate.py --mode generate   # 生成对比:同一批问题两边作答
+python scripts/judge_eval.py                 # LLM-as-judge:基座模型当裁判,四维度打分
 ```
 
 ### 4. 部署演示
@@ -122,6 +124,7 @@ python app/api_server.py      # API 服务 http://127.0.0.1:8000/docs
 - **指标**:train_loss 0.586(低于随机基线 ln2≈0.693),rewards/accuracies 0.75–0.875,rewards/margins 0.20 → 0.53 持续放大
 - **产物**:`outputs/dpo-lora/final` 为「SFT+DPO 合一」单 adapter(DPO 直接在 SFT adapter 权重上更新;v6 SFT adapter 已备份至 `outputs/sft-lora-v6-final`),部署时替代 SFT adapter 单挂即可,`evaluate.py` 已自动优先使用
 - **效果**:生成评估显示人设风格(结论先行、分点、贴合种子文案)保持完整,编程回答结构稳定
+- **LLM-as-judge 自动评估**(`judge_eval.py`,基座模型当裁判,四维度 1-10 绝对打分):结论先行 6.9→**8.0**、人设一致 7.3→**7.7**,结构/内容质量基本持平(-0.3),总分 29.6→**30.6**,胜率 3/7。诚实解读:14B 基座本就较强,小数据微调主要改变「风格」而非「能力」,这与 PPL 结论互证;裁判与被评模型同源,存在同源偏好局限
 
 **v6(编程数据升级为拒绝采样版,共 2083 条)**
 
