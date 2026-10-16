@@ -104,12 +104,41 @@ def extract_json(text: str) -> dict | None:
     return None
 
 
+def score_sample(sample: dict, preset: str) -> int:
+    """规则打分(拒绝采样用):人设结构 + 代码块完整 + 长度适中 + 无截断。
+
+    打分项全部可解释、可复现,满分 8 分。
+    """
+    out = sample["output"]
+    s = 0
+    if out.startswith("结论"):
+        s += 2                                # 人设风格:结论先行
+    if re.search(r"\n\s*1[.、]", out):
+        s += 1                                # 分点结构
+    if preset == "coding":
+        fences = out.count("```")
+        if fences >= 2 and fences % 2 == 0:
+            s += 2                            # 完整闭合的代码块
+        elif fences == 1:
+            s -= 2                            # 代码块未闭合(截断),扣分
+    n = len(out)
+    if 200 <= n <= 900:
+        s += 2                                # 长度甜区:内容充实但不冗长
+    elif 100 <= n <= 1500:
+        s += 1
+    if out.rstrip().endswith(("。", "!", "?", "”", "」", "```", ".")):
+        s += 1                                # 完整收尾(未被 max_tokens 截断)
+    return s
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default="configs/sft_lora.yaml")
     ap.add_argument("--n", type=int, default=400, help="目标生成条数")
     ap.add_argument("--preset", choices=["general", "coding"], default="general",
                     help="general=通用主题,coding=编程能力主题(带代码块)")
+    ap.add_argument("--candidates", type=int, default=1,
+                    help="拒绝采样:每题生成 K 个候选,规则打分取最优(1=不启用)")
     args = ap.parse_args()
 
     if args.preset == "coding":
@@ -118,6 +147,8 @@ def main() -> int:
     else:
         topics_pool, fewshot, prompt_tpl = TOPICS, FEWSHOT, PROMPT
         out_name, max_new = "generated_instructions.jsonl", 350
+    if args.candidates > 1:
+        out_name = out_name.replace(".jsonl", "_rs.jsonl")  # 拒绝采样产物单独成文件
 
     with open(ROOT / args.config, encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -157,6 +188,8 @@ def main() -> int:
     rng.shuffle(topics)
 
     written, fails = have, 0
+    scores: list[int] = []
+    max_out = 2000 if args.preset == "coding" else 1200
     with open(out_path, "a", encoding="utf-8") as fout, torch.no_grad():
         for i, topic in enumerate(topics, 1):
             if written >= args.n:
@@ -168,28 +201,39 @@ def main() -> int:
             inputs = tokenizer.apply_chat_template(
                 messages, return_tensors="pt", return_dict=True, add_generation_prompt=True
             ).to(model.device)
-            out = model.generate(
-                **inputs, max_new_tokens=max_new, temperature=0.9, top_p=0.95,
-                do_sample=True, pad_token_id=tokenizer.eos_token_id,
-            )
-            text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
-            sample = extract_json(text)
 
-            # 基础过滤:长度、去重(编程回答含代码块,上限放宽到 2000)
-            max_out = 2000 if args.preset == "coding" else 1200
-            if (not sample or sample["instruction"] in existing
-                    or not 8 <= len(sample["instruction"]) <= 200
-                    or not 30 <= len(sample["output"]) <= max_out):
+            # 拒绝采样:生成 K 个候选,规则打分取最优;K=1 时退化为单次生成
+            best, best_score = None, -999
+            for _ in range(args.candidates):
+                out = model.generate(
+                    **inputs, max_new_tokens=max_new, temperature=0.9, top_p=0.95,
+                    do_sample=True, pad_token_id=tokenizer.eos_token_id,
+                )
+                text = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+                cand = extract_json(text)
+                # 基础过滤:长度、去重(编程回答含代码块,上限放宽到 2000)
+                if (not cand or cand["instruction"] in existing
+                        or not 8 <= len(cand["instruction"]) <= 200
+                        or not 30 <= len(cand["output"]) <= max_out):
+                    continue
+                sc = score_sample(cand, args.preset)
+                if sc > best_score:
+                    best, best_score = cand, sc
+
+            if best is None:
                 fails += 1
                 continue
-            existing.add(sample["instruction"])
-            fout.write(json.dumps(sample, ensure_ascii=False) + "\n")
+            existing.add(best["instruction"])
+            scores.append(best_score)
+            fout.write(json.dumps(best, ensure_ascii=False) + "\n")
             fout.flush()
             written += 1
             if written % 20 == 0:
-                print(f"[gen] {written}/{args.n} (失败 {fails})", flush=True)
+                avg = sum(scores) / len(scores)
+                print(f"[gen] {written}/{args.n} (失败 {fails}, 平均得分 {avg:.1f}/8)", flush=True)
 
-    print(f"完成:共 {written} 条,失败跳过 {fails} 次", flush=True)
+    avg = sum(scores) / len(scores) if scores else 0
+    print(f"完成:共 {written} 条,失败跳过 {fails} 次,平均得分 {avg:.1f}/8", flush=True)
     return 0
 
 
