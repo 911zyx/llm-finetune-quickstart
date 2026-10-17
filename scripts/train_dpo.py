@@ -40,7 +40,10 @@ def main() -> int:
     dataset = load_dataset("json", data_files=str(ROOT / "data/raw/dpo_pairs.jsonl"))["train"]
     dataset = dataset.remove_columns([c for c in dataset.column_names
                                       if c not in ("prompt", "chosen", "rejected")])
-    print(f"DPO 偏好对: {len(dataset)}")
+    # 10% holdout:rewards/accuracies 的泛化口径(52 对时代只有训练集口径)
+    split = dataset.train_test_split(test_size=0.1, seed=cfg["data"].get("seed", 42))
+    train_ds, eval_ds = split["train"], split["test"]
+    print(f"DPO 偏好对: 训练 {len(train_ds)} / 验证 {len(eval_ds)}")
 
     quant = BitsAndBytesConfig(
         load_in_4bit=True, bnb_4bit_quant_type="nf4",
@@ -68,13 +71,14 @@ def main() -> int:
     training_args = DPOConfig(
         output_dir=str(ROOT / "outputs/dpo-lora"),
         beta=0.1,                          # 偏离参考模型的惩罚强度
-        num_train_epochs=1,
+        num_train_epochs=2,
         per_device_train_batch_size=1,
         gradient_accumulation_steps=8,
         learning_rate=5.0e-5,              # DPO 用比 SFT 更小的学习率
         lr_scheduler_type="cosine",
         warmup_steps=2,
         logging_steps=2,
+        eval_strategy="epoch",             # 每个 epoch 在 holdout 上算 rewards 指标
         save_strategy="epoch",
         bf16=True,
         gradient_checkpointing=True,
@@ -89,7 +93,8 @@ def main() -> int:
         model=model,   # PeftModel:TRL 会复制 default adapter 为冻结的 ref 作为参考模型
         ref_model=None,
         args=training_args,
-        train_dataset=dataset,
+        train_dataset=train_ds,
+        eval_dataset=eval_ds,
         processing_class=tokenizer,
     )
     trainer.train()

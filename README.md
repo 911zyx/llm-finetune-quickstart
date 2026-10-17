@@ -117,7 +117,16 @@ python app/api_server.py      # API 服务 http://127.0.0.1:8000/docs
 
 - **环境**:PyTorch 2.9.1+cu128(Blackwell 必需)+ triton-windows 3.8(TRL 融合 loss 依赖)+ TRL 1.15
 
-**v7(v6 之上叠加 DPO 偏好对齐;当前版本)**
+**v7.1(偏好对扩量至 400,加入 holdout 验证;当前版本)**
+
+- **扩量**:`generate_dpo_data.py --n 400 --candidates 3` 断点续跑(845 次尝试、445 次因分差 <2 跳过),52 → **400 对**
+- **训练口径升级**:90/10 train/holdout 拆分(360/40),2 epochs / 90 步 / 11 分钟;每个 epoch 在 holdout 上自动评估
+- **指标**:holdout rewards/accuracies **1.0**、rewards/margins 10.1、eval_loss 0.028——偏好泛化成立,非记忆训练集(v7 时代只有训练口径 0.75–0.875)
+- **LLM-as-judge 复测**(同一裁判口径):结论先行 +1.1→**+1.7**、总分差 +1.0→**+2.3**、胜率 3/7→**5/7**,结构与内容质量由 -0.3 翻正至 +0.1
+- **诚实注记**:holdout 与训练数据同分布(同源生成、同打分器),泛化结论限于该分布;rejected logps 降幅大(margin>10),judge 显示内容质量未退化,但更大 beta 或更少 epoch 可作为后续消融方向
+- **自动化**:夜间扩量+重训+评估由 `scripts/auto_v71_pipeline.sh` 无人值守完成(旧 52 对 adapter 备份至 `outputs/dpo-lora-v1-52pairs`)
+
+**v7(v6 之上叠加 DPO 偏好对齐,52 对流程验证版)**
 
 - **偏好对构造(零成本复用)**:`generate_dpo_data.py` 抽取训练集指令,用 v6 模型每题生成 3 个候选,复用拒绝采样的同一打分器,最优作 chosen、最差作 rejected,分差 ≥2 才保留,共 52 对
 - **训练**:`train_dpo.py`,TRL 1.15 DPOTrainer,beta=0.1、lr 5e-5、1 epoch、7 步、47 秒;参考模型由 TRL 自动将 SFT adapter 复制为冻结的 `ref` adapter 获得(参考 = 基座 + SFT,语义严格,不额外占显存)
@@ -163,7 +172,7 @@ python app/api_server.py      # API 服务 http://127.0.0.1:8000/docs
 
 > 结论:小数据学「风格」;扩充数据提升拟合与覆盖;混入公开数据需关注人设配比(v4 教训),
 > 关键小数据上采样即可修复(v5 验证);拒绝采样提升数据质量(v6),其淘汰候选还能零成本构造
-> DPO 偏好对做对齐(v7)。v1→v7 构成完整的实验迭代记录。
+> DPO 偏好对做对齐(v7),扩量 + holdout 验证后偏好泛化得到确认(v7.1)。v1→v7.1 构成完整的实验迭代记录。
 
 ## 💻 硬件档位
 
